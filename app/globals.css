@@ -1,26 +1,239 @@
 @import "tailwindcss";
 
+/* ----------------------------------------------------------------------------
+   Design tokens. Components use the semantic names (bg-surface, text-muted …),
+   so light/dark switch here only. data-theme on <html> overrides the OS setting.
+   ---------------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------------
+   Design tokens — TextNext blue on white, hairlines instead of shadows.
+   Components use the semantic names (bg-surface, text-muted …), so light/dark
+   switch here only. data-theme on <html> overrides the OS setting.
+   ---------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f4f5f7;
+  --surface-3: #e9ebef;
+  --fg: #15171c;
+  --muted: #5b6270;
+  --subtle: #8c929c;
+  --border: #e5e7eb;
+  --border-strong: #cfd4dc;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-fg: #ffffff;
+  --primary-soft: #eef3ff;
+  --primary-soft-fg: #1d4ed8;
+  /* TextNext red: the listing button and unread badges only. */
+  --accent: #ef4444;
+  --accent-fg: #ffffff;
+  --success: #15803d;
+  --success-soft: #edf8f1;
+  --warning: #a16207;
+  --warning-soft: #fdf6e3;
+  --danger: #dc2626;
+  --danger-soft: #fdefef;
+  --overlay: rgb(15 18 25 / 0.45);
+  --shadow-color: 222 25% 15%;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --surface: #14171c;
+    --surface-2: #1b1f26;
+    --surface-3: #252a32;
+    --fg: #e8eaee;
+    --muted: #a3aab5;
+    --subtle: #79808b;
+    --border: #252930;
+    --border-strong: #353a43;
+    --primary: #6b9bff;
+    --primary-hover: #8db2ff;
+    --primary-fg: #0b1220;
+    --primary-soft: #172238;
+    --primary-soft-fg: #a9c4ff;
+    --accent: #ff6b6b;
+    --accent-fg: #1b0606;
+    --success: #4ade80;
+    --success-soft: #10261a;
+    --warning: #fbbf24;
+    --warning-soft: #2a2310;
+    --danger: #f87171;
+    --danger-soft: #2c1517;
+    --overlay: rgb(0 0 0 / 0.6);
+    --shadow-color: 220 40% 2%;
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #14171c;
+  --surface-2: #1b1f26;
+  --surface-3: #252a32;
+  --fg: #e8eaee;
+  --muted: #a3aab5;
+  --subtle: #79808b;
+  --border: #252930;
+  --border-strong: #353a43;
+  --primary: #6b9bff;
+  --primary-hover: #8db2ff;
+  --primary-fg: #0b1220;
+  --primary-soft: #172238;
+  --primary-soft-fg: #a9c4ff;
+  --accent: #ff6b6b;
+  --accent-fg: #1b0606;
+  --success: #4ade80;
+  --success-soft: #10261a;
+  --warning: #fbbf24;
+  --warning-soft: #2a2310;
+  --danger: #f87171;
+  --danger-soft: #2c1517;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow-color: 220 40% 2%;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-fg: var(--primary-soft-fg);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-overlay: var(--overlay);
+
+  --font-sans: var(--font-plex), "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+
+  /* Small radii across the board (overrides Tailwind's scale). */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.75rem;
+
+  /* Hairlines carry structure; shadows are reserved for floating layers. */
+  --shadow-card: 0 0 #0000;
+  --shadow-float: 0 12px 32px hsl(var(--shadow-color) / 0.16), 0 1px 3px hsl(var(--shadow-color) / 0.08);
+
+  --animate-fade-in: fade-in 180ms ease-out both;
+  --animate-sheet-up: sheet-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop: pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1.4) both;
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes sheet-up {
+    from { transform: translateY(24px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes pop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.28); }
+    100% { transform: scale(1); }
+  }
+  @keyframes shimmer {
+    0% { opacity: 0.55; }
+    50% { opacity: 1; }
+    100% { opacity: 0.55; }
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    background: var(--bg);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  /* Break Japanese headings between phrases (Chrome), not mid-word like "ありませ/ん". */
+  h1,
+  h2,
+  h3 {
+    word-break: auto-phrase;
+    overflow-wrap: break-word;
+    text-wrap-style: balance;
+  }
+
+  /* iOS zooms into inputs under 16px; keep form text at 16px on touch devices. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background: var(--overlay);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Same phrase-aware wrapping as headings, for short non-heading titles. */
+@utility phrase {
+  word-break: auto-phrase;
+  overflow-wrap: break-word;
+  text-wrap-style: balance;
+}
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
