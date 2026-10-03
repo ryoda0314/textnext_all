@@ -1,29 +1,40 @@
-// Test data for local development. Run right after a reset:
+// Test data:
 //
-//   npm run db:reset && npm run db:seed
+//   npm run db:seed                  local Supabase (.env.local), password test1234
+//   npm run db:seed:remote           the production project (.env.remote.local), password SEED_PASSWORD
+//   … -- --remove                    deletes all of it again (do this before launch)
 //
 //   テスト大学 (test-univ.ac.jp)     five members, ~20 listings, trades in every state
 //   サンプル大学 (sample-univ.ac.jp) one member, to check that universities stay apart
-//   admin@example.com               the operator console
+//   admin@example.com               the operator console (local only)
 //
 // Everything goes through the app's own RPCs and policies, signed in as each member.
 // Afterwards the timestamps are moved into the past (service role) so the feed, chats and
-// reviews read like a few weeks of real use. Local Supabase only.
+// reviews read like a few weeks of real use.
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { ADMIN_EMAIL, BOOKS, MEMBERS, PASSWORD, UNIVERSITIES, isbn13 } from "./seed/data.mjs";
 import { renderPhoto } from "./seed/photos.mjs";
 
+const remote = process.argv.includes("--remote");
+const removing = process.argv.includes("--remove");
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const secretKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+const envFile = remote ? ".env.remote.local" : ".env.local";
 if (!url || !publishableKey || !secretKey) {
-  console.error("Supabase の接続情報がありません。npm run db:seed から実行してください（.env.local を読み込みます）。");
+  console.error(`Supabase の接続情報がありません（${envFile} の NEXT_PUBLIC_SUPABASE_URL・NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY・SUPABASE_SECRET_KEY）。`);
   process.exit(1);
 }
-if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(url)) {
-  console.error(`${url} はローカルの Supabase ではないため中止しました。テストデータはローカル専用です。`);
+if (!remote && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(url)) {
+  console.error(`${url} はローカルの Supabase ではありません。本番に入れるときは npm run db:seed:remote を使ってください。`);
+  process.exit(1);
+}
+// The local password is written in the repo; a shared project gets its own.
+const password = remote ? process.env.SEED_PASSWORD : PASSWORD;
+if (!removing && remote && (!password || password.length < 8 || password === PASSWORD)) {
+  console.error(`本番用のパスワードを ${envFile} の SEED_PASSWORD に設定してください（8文字以上、${PASSWORD} 以外）。`);
   process.exit(1);
 }
 
@@ -53,52 +64,49 @@ const slot = (offset, id) => ({ date: jstDate(offset), slot: id });
 
 async function signIn(email) {
   const client = createClient(url, publishableKey, options);
-  const { user } = await call(client.auth.signInWithPassword({ email, password: PASSWORD }), `${email} でログイン`);
+  const { user } = await call(client.auth.signInWithPassword({ email, password }), `${email} でログイン`);
   return { client, id: user.id, email };
 }
 
 async function createAccount(email) {
-  await call(service.auth.admin.createUser({ email, password: PASSWORD, email_confirm: true }), `${email} の作成`);
+  await call(service.auth.admin.createUser({ email, password, email_confirm: true }), `${email} の作成`);
   return signIn(email);
 }
 
-// The allow-listed admin may already exist (signed up by hand); reuse it with the test password.
+// Local only (allow-listed in supabase/seed.sql). It may already exist (signed up by hand);
+// reuse it with the test password.
 async function adminAccount() {
   const { users } = await call(service.auth.admin.listUsers({ perPage: 1000 }), "ユーザー一覧");
   const existing = users.find((u) => u.email === ADMIN_EMAIL);
   if (!existing) return createAccount(ADMIN_EMAIL);
-  await call(service.auth.admin.updateUserById(existing.id, { password: PASSWORD, email_confirm: true }), "管理者のパスワード");
-  console.log(`既存の ${ADMIN_EMAIL} のパスワードを ${PASSWORD} にしました`);
+  await call(service.auth.admin.updateUserById(existing.id, { password, email_confirm: true }), "管理者のパスワード");
+  console.log(`既存の ${ADMIN_EMAIL} のパスワードを ${password} にしました`);
   return signIn(ADMIN_EMAIL);
 }
 
-async function createUniversity(admin, u) {
-  const id = await call(
-    admin.client.rpc("admin_save_university", {
-      p_id: null, p_name: u.name, p_short_name: u.shortName, p_slug: u.slug, p_status: "active", p_external_url: null,
-      p_price_cap_percent: 30, p_meetup_slots: null, p_calil_system_id: null, p_name_verified: true,
-    }),
+// The spots private.seed_default_spots() gives every new university.
+const DEFAULT_SPOTS = [{ name: "図書館前", description: "入口付近の人通りが多い場所" }, { name: "生協・購買前" }, { name: "学生食堂前" }, { name: "正門前" }];
+
+async function createUniversity(u) {
+  const { id } = await call(
+    service.from("universities").insert({ slug: u.slug, name: u.name, short_name: u.shortName, name_verified: true }).select("id").single(),
     `${u.name} の作成`,
   );
-  await call(admin.client.rpc("admin_set_domain", { p_domain: u.domain, p_university_id: id, p_include_subdomains: true }), `${u.domain} の登録`);
-  const campuses = {};
-  for (const [i, name] of u.campuses.entries()) {
-    campuses[name] = await call(
-      admin.client.rpc("admin_save_campus", { p_id: null, p_university_id: id, p_name: name, p_sort_order: (i + 1) * 10, p_is_active: true }),
-      name,
-    );
-  }
-  for (const [i, spot] of u.spots.entries()) {
-    await call(
-      admin.client.rpc("admin_save_spot", {
-        p_id: null, p_university_id: id, p_campus_id: campuses[spot.campus] ?? null, p_name: spot.name,
-        p_description: spot.description ?? null, p_sort_order: 50 + i * 10, p_is_active: true,
-      }),
-      spot.name,
-    );
-  }
-  const spots = await call(service.from("meetup_spots").select("id, name").eq("university_id", id), "受け渡し場所");
-  return { ...u, id, campuses, spots: Object.fromEntries(spots.map((s) => [s.name, s.id])) };
+  await call(service.from("university_domains").insert({ domain: u.domain, university_id: id, include_subdomains: true }), `${u.domain} の登録`);
+  const campuses = u.campuses.length
+    ? await call(service.from("campuses").insert(u.campuses.map((name, i) => ({ university_id: id, name, sort_order: (i + 1) * 10 }))).select("id, name"), "キャンパス")
+    : [];
+  const campusIds = Object.fromEntries(campuses.map((c) => [c.name, c.id]));
+  const spots = await call(
+    service
+      .from("meetup_spots")
+      .insert([...DEFAULT_SPOTS, ...u.spots].map((s, i) => ({
+        university_id: id, campus_id: s.campus ? campusIds[s.campus] : null, name: s.name, description: s.description ?? null, sort_order: (i + 1) * 10,
+      })))
+      .select("id, name"),
+    "受け渡し場所",
+  );
+  return { ...u, id, campuses: campusIds, spots: Object.fromEntries(spots.map((s) => [s.name, s.id])) };
 }
 
 async function join(key, university) {
@@ -112,6 +120,8 @@ async function join(key, university) {
     `${m.nickname} のプロフィール`,
   );
   if (m.bio) await call(account.client.from("profiles").update({ bio: m.bio }).eq("id", account.id), "自己紹介");
+  // The test domains have no mail servers; on a shared project, notification mail to them would only bounce.
+  if (remote) await call(account.client.from("user_settings").update({ email_notifications: false }).eq("user_id", account.id), "メール通知");
   await call(service.from("profiles").update({ created_at: ago(m.joinedDaysAgo, "21:00").toISOString() }).eq("id", account.id), "登録日");
   return { ...m, ...account, key, university };
 }
@@ -285,19 +295,67 @@ function tradeActions(members) {
   };
 }
 
+// ----------------------------------------------------------------- remove ----
+
+const SLUGS = Object.values(UNIVERSITIES).map((u) => u.slug);
+const DOMAINS = Object.values(UNIVERSITIES).map((u) => u.domain);
+const isTestAddress = (email) => DOMAINS.some((d) => email?.endsWith(`@${d}`) || email?.endsWith(`.${d}`));
+
+async function removeFolder(bucket, folder) {
+  const entries = await call(service.storage.from(bucket).list(folder, { limit: 1000 }), `${bucket} の一覧`);
+  const files = entries.filter((e) => e.id).map((e) => `${folder}/${e.name}`);
+  if (files.length) await call(service.storage.from(bucket).remove(files), `${bucket} の削除`);
+  for (const sub of entries.filter((e) => !e.id)) await removeFolder(bucket, `${folder}/${sub.name}`);
+}
+
+/** Deletes the test universities with everything in them, including accounts made there by hand. */
+async function removeTestData() {
+  const universityIds = (await call(service.from("universities").select("id").in("slug", SLUGS), "大学")).map((u) => u.id);
+  const { users } = await call(service.auth.admin.listUsers({ perPage: 1000 }), "ユーザー一覧");
+  const profiles = universityIds.length ? await call(service.from("profiles").select("id").in("university_id", universityIds), "会員") : [];
+  const memberIds = [...new Set([...profiles.map((p) => p.id), ...users.filter((u) => isTestAddress(u.email)).map((u) => u.id)])];
+  const tradeIds = universityIds.length ? (await call(service.from("trades").select("id").in("university_id", universityIds), "取引")).map((t) => t.id) : [];
+
+  for (const id of universityIds) await removeFolder("item-images", id);
+  for (const id of tradeIds) await removeFolder("chat-images", id);
+  for (const id of memberIds) await removeFolder("avatars", id);
+
+  if (memberIds.length) {
+    await call(service.from("reports").delete().in("reporter_id", memberIds), "通報");
+    await call(service.from("inquiries").delete().in("user_id", memberIds), "お問い合わせ");
+    await call(service.from("user_restrictions").delete().in("user_id", memberIds), "利用制限");
+  }
+  if (universityIds.length) {
+    await call(service.from("reports").delete().in("university_id", universityIds), "通報");
+    await call(service.from("trades").delete().in("university_id", universityIds), "取引");
+    await call(service.from("items").delete().in("university_id", universityIds), "出品");
+    await call(service.from("wishes").delete().in("university_id", universityIds), "入荷通知");
+    await call(service.from("profiles").delete().in("university_id", universityIds), "会員");
+    await call(service.from("universities").delete().in("id", universityIds), "大学");
+  }
+  await call(service.from("university_requests").delete().eq("email_domain", "hoshizora-college.test"), "大学リクエスト");
+  // Profiles are gone, so the account-deletion trigger has nothing left to anonymise.
+  for (const id of memberIds) {
+    const { error } = await service.auth.admin.deleteUser(id);
+    if (error && error.status !== 404) throw new Error(`アカウントの削除: ${error.message}`);
+  }
+  console.log(`テストデータを削除しました（大学 ${universityIds.length}、アカウント ${memberIds.length}）。`);
+}
+
 // ------------------------------------------------------------------- main ----
 
 async function main() {
-  const slugs = Object.values(UNIVERSITIES).map((u) => u.slug);
-  const existing = await call(service.from("universities").select("slug").in("slug", slugs), "既存データの確認");
+  if (removing) return removeTestData();
+
+  const existing = await call(service.from("universities").select("slug").in("slug", SLUGS), "既存データの確認");
   if (existing.length > 0) {
-    console.error("テストデータはすでに入っています。作り直すときは npm run db:reset（ローカルのデータがすべて消えます）のあとに、もう一度実行してください。");
+    console.error(`テストデータはすでに入っています。作り直すときは、先に npm run ${remote ? "db:seed:remote" : "db:seed"} -- --remove で消してください。`);
     process.exit(1);
   }
 
-  const admin = await adminAccount();
+  const admin = remote ? null : await adminAccount();
   const universities = {};
-  for (const [key, u] of Object.entries(UNIVERSITIES)) universities[key] = await createUniversity(admin, u);
+  for (const [key, u] of Object.entries(UNIVERSITIES)) universities[key] = await createUniversity(u);
 
   const members = {};
   for (const key of Object.keys(MEMBERS)) members[key] = await join(key, universities[MEMBERS[key].university]);
