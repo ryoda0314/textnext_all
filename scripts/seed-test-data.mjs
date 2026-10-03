@@ -493,7 +493,28 @@ async function main() {
     }
   }
 
-  // Support desk and moderation queue for the admin console.
+  // The admin console's queues are only filled locally; production keeps its real ones clean.
+  if (admin) await seedSupportDesk(admin, universities, members);
+
+  // Notifications: everything older has been read, except what the unread trades and the wish match produced.
+  const memberIds = Object.values(members).map((m) => m.id);
+  await call(service.from("notifications").update({ read_at: new Date().toISOString() }).in("user_id", memberIds).is("read_at", null), "通知を既読に");
+  for (const match of [
+    { user_id: taro.id, trade_id: linear.tradeId },
+    { user_id: hanako.id, trade_id: stats.tradeId },
+    { user_id: hanako.id, item_id: items.analysis.id, type: "wish_match" },
+    { user_id: sakura.id, trade_id: soc.tradeId, type: "handover_done" },
+    { user_id: sakura.id, trade_id: soc.tradeId, type: "rating_received" },
+  ]) {
+    await call(service.from("notifications").update({ read_at: null }).match(match), "未読に戻す");
+  }
+
+  printSummary(universities, members);
+}
+
+/** An answered request, an open bug report, an item report and a university request for /admin. */
+async function seedSupportDesk(admin, universities, members) {
+  const { hanako, yuto } = members;
   const inquiry = await call(
     hanako.client.rpc("submit_inquiry", {
       p_category: "request", p_body: "北キャンパスの理学部棟の前も受け渡し場所に追加してもらえると助かります。", p_email: null,
@@ -535,21 +556,6 @@ async function main() {
 
   const guest = createClient(url, publishableKey, options);
   await call(guest.rpc("request_university", { p_email: "student@hoshizora-college.test", p_university_name: "星空カレッジ", p_contact_email: null }), "大学の追加リクエスト");
-
-  // Notifications: everything older has been read, except what the unread trades and the wish match produced.
-  const memberIds = Object.values(members).map((m) => m.id);
-  await call(service.from("notifications").update({ read_at: new Date().toISOString() }).in("user_id", memberIds).is("read_at", null), "通知を既読に");
-  for (const match of [
-    { user_id: taro.id, trade_id: linear.tradeId },
-    { user_id: hanako.id, trade_id: stats.tradeId },
-    { user_id: hanako.id, item_id: items.analysis.id, type: "wish_match" },
-    { user_id: sakura.id, trade_id: soc.tradeId, type: "handover_done" },
-    { user_id: sakura.id, trade_id: soc.tradeId, type: "rating_received" },
-  ]) {
-    await call(service.from("notifications").update({ read_at: null }).match(match), "未読に戻す");
-  }
-
-  printSummary(universities, members);
 }
 
 function printSummary(universities, members) {
@@ -560,7 +566,7 @@ function printSummary(universities, members) {
   console.log(
     [
       "",
-      "テストデータを作成しました。パスワードは全員 " + PASSWORD,
+      `テストデータを作成しました（${url}）。パスワードは全員 ${password}`,
       "",
       `${universities.test.name}（${universities.test.domain}）`,
       ...rows("test"),
@@ -568,8 +574,7 @@ function printSummary(universities, members) {
       `${universities.sample.name}（${universities.sample.domain}）`,
       ...rows("sample"),
       "",
-      "運営",
-      `  ${ADMIN_EMAIL.padEnd(26)} 管理画面 /admin`,
+      ...(remote ? ["公開前に npm run db:seed:remote -- --remove で削除してください。"] : ["運営", `  ${ADMIN_EMAIL.padEnd(26)} 管理画面 /admin`]),
       "",
     ].join("\n"),
   );
@@ -577,6 +582,6 @@ function printSummary(universities, members) {
 
 main().catch((error) => {
   console.error(`\n途中で失敗しました: ${error.message}`);
-  console.error("npm run db:reset でローカルのデータを消してから、もう一度実行してください。");
+  if (!removing) console.error(`npm run ${remote ? "db:seed:remote" : "db:seed"} -- --remove で途中までのデータを消してから、もう一度実行してください。`);
   process.exit(1);
 });

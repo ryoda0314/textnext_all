@@ -32,7 +32,7 @@ npm run dev             # http://localhost:3000
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm run db:seed` | テストデータを作成（ローカル専用。作り直すときは先に `db:reset`） |
+| `npm run db:seed` | テストデータを作成（`-- --remove` で削除）。本番には `npm run db:seed:remote`（下記） |
 | `npm run db:test` | DB のテスト（大学間の分離・RLS・取引の状態遷移など 61 項目）。ロールバックされるのでデータは残りません |
 | `npm run db:reset` | マイグレーションとシードを入れ直す（ローカルのデータはすべて消えます） |
 | `npm run db:types` | `lib/database.types.ts` を DB から再生成 |
@@ -41,7 +41,7 @@ npm run dev             # http://localhost:3000
 
 ### テストデータ
 
-`npm run db:seed` で、架空の「テスト大学」に出品・取引・評価・通知がひととおり入った状態を作ります。パスワードはすべて `test1234` です。
+`npm run db:seed` で、架空の「テスト大学」に出品・取引・評価・通知がひととおり入った状態を作ります。ローカルのパスワードはすべて `test1234` です（アカウント一覧は `TEST_ACCOUNTS.md` にも）。
 
 | アカウント | 立場 | 見られる画面 |
 | --- | --- | --- |
@@ -51,11 +51,18 @@ npm run dev             # http://localhost:3000
 | `sakura@test-univ.ac.jp`（さくら・文学部M1） | 出品者 | 受け渡し後、自分の評価がまだの取引 |
 | `yuto@test-univ.ac.jp`（ゆうと・工学部1年） | 購入者 | 明日受け渡し予定の取引 |
 | `jiro@sample-univ.ac.jp`（じろう） | 別の「サンプル大学」の学生 | テスト大学の出品が見えないことの確認 |
-| `admin@example.com` | 運営 | `/admin`（未対応の通報・お問い合わせ・大学リクエストが1件ずつ） |
+| `admin@example.com` | 運営（ローカルのみ） | `/admin`（未対応の通報・お問い合わせ・大学リクエストが1件ずつ） |
 
 - 取引は「リクエスト中・日程の再提案・受け渡し予定・評価待ち・完了・キャンセル」の各状態があり、日時は数週間分の利用に見えるよう過去にずらしてあります
 - 出品写真は `scripts/seed/photos.mjs` が表紙を描いて生成します。アカウントや本を増やすときは `scripts/seed/data.mjs` を編集してください
-- ローカルの Supabase 以外には実行できないようにしてあります
+- `npm run db:seed -- --remove` で、テスト大学とサンプル大学をアカウント・画像ごと削除します（`db:reset` しなくても作り直せます）
+
+**本番に入れる場合**（実機で試すとき）
+
+1. `.env.remote.local` に本番の `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`・`SUPABASE_SECRET_KEY` と、テストアカウント用の `SEED_PASSWORD` を書く（Next.js は読み込まず、git にも入りません）
+2. `npm run db:seed:remote`
+
+本番では `test1234` は使わず `SEED_PASSWORD` を使います。管理者のテストアカウントと管理画面用のサンプル（通報など）は作らず、テストアカウントのメール通知はオフにします。**一般公開の前に `npm run db:seed:remote -- --remove` で必ず削除してください。**
 
 ## 本番環境の作り方
 
